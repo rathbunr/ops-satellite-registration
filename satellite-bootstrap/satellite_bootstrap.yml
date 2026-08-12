@@ -1,0 +1,182 @@
+---
+# =============================================================================
+# satellite_bootstrap.yml
+# ---------------------------------------------------------------------------
+# Pre-registration bootstrap for hosts that lack DNS access to the
+# Satellite server.  Run this BEFORE satellite_register_hosts.yml.
+#
+# What it does (in order):
+#   1. Adds /etc/hosts entries so the host can resolve the Satellite.
+#   2. Installs the Satellite CA certificate into the system trust store.
+#   3. Creates a dedicated user for Satellite Remote Execution (REX).
+#   4. Deploys the foreman-proxy SSH public key for key-based REX auth.
+#   5. Configures passwordless sudo for the REX user.
+#
+# Requirements:
+#   - SSH + sudo access to the target hosts (Machine credential in AAP).
+#   - The Satellite CA cert file on the controller (push method), OR
+#     network reachability to the Satellite IP (pull method).
+#   - The foreman-proxy SSH public key from the Satellite server.
+#
+# No external collections needed — ansible.builtin only.
+# =============================================================================
+
+- name: Bootstrap hosts for Satellite registration
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ================================================================
+    # PHASE 1 — DNS RESOLUTION VIA /etc/hosts
+    # ================================================================
+
+    - name: "Phase 1 — Ensure Satellite is resolvable via /etc/hosts"
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        block: |
+          # --- Red Hat Satellite ---
+          {{ satellite_ip }}    {{ satellite_fqdn }}
+        marker: "# {mark} ANSIBLE MANAGED — Satellite Server"
+        create: false
+        state: present
+
+    - name: "Phase 1 — Add extra /etc/hosts entries (capsules, etc.)"
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ item.fqdn }}.*"
+        line: >-
+          {{ item.ip }}    {{ item.fqdn }}{{ ' ' ~ (item.aliases | default([]) | join(' ')) if item.aliases is defined else '' }}
+        state: present
+      loop: "{{ satellite_extra_hosts_entries }}"
+      loop_control:
+        label: "{{ item.fqdn }}"
+      when: satellite_extra_hosts_entries | length > 0
+
+    - name: "Phase 1 — Verify Satellite FQDN resolves"
+      ansible.builtin.command:
+        cmd: "getent hosts {{ satellite_fqdn }}"
+      register: _dns_check
+      changed_when: false
+      failed_when: _dns_check.rc != 0
+
+    # ================================================================
+    # PHASE 2 — SATELLITE CA TRUST
+    # ================================================================
+
+    # --- Method A: Push the cert from the controller ---
+    - name: "Phase 2 — Push Satellite CA certificate to host"
+      ansible.builtin.copy:
+        src: "{{ satellite_ca_cert_local_path }}"
+        dest: "{{ satellite_ca_cert_remote_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: update ca trust
+      when: satellite_ca_delivery == "push"
+
+    # --- Method B: Pull the cert from the Satellite's /pub endpoint ---
+    - name: "Phase 2 — Pull Satellite CA certificate from server"
+      ansible.builtin.get_url:
+        url: "https://{{ satellite_fqdn }}/pub/katello-server-ca.crt"
+        dest: "{{ satellite_ca_cert_remote_path }}"
+        validate_certs: false       # initial fetch — can't validate yet
+        owner: root
+        group: root
+        mode: "0644"
+      notify: update ca trust
+      when: satellite_ca_delivery == "pull"
+
+    # Flush now so the trust store is updated before anything else
+    # tries to talk HTTPS to the Satellite.
+    - name: "Phase 2 — Flush handlers to update trust store now"
+      ansible.builtin.meta: flush_handlers
+
+    - name: "Phase 2 — Verify HTTPS connectivity to Satellite"
+      ansible.builtin.uri:
+        url: "https://{{ satellite_fqdn }}/pub/"
+        method: GET
+        status_code: 200
+        validate_certs: true
+      register: _https_check
+      # If this fails, the CA cert wasn't installed correctly.
+      failed_when: _https_check.status != 200
+
+    # ================================================================
+    # PHASE 3 — REX USER ACCOUNT
+    # ================================================================
+
+    - name: "Phase 3 — Create REX service user"
+      ansible.builtin.user:
+        name: "{{ satellite_rex_user }}"
+        uid: "{{ satellite_rex_uid | default(omit) }}"
+        comment: "{{ satellite_rex_comment }}"
+        shell: "{{ satellite_rex_shell }}"
+        create_home: "{{ satellite_rex_create_home }}"
+        system: true
+        state: present
+
+    # ================================================================
+    # PHASE 4 — SSH KEY DEPLOYMENT FOR REX
+    # ================================================================
+
+    - name: "Phase 4 — Deploy foreman-proxy SSH public key"
+      ansible.posix.authorized_key:
+        user: "{{ satellite_rex_user }}"
+        key: "{{ satellite_rex_ssh_pubkey }}"
+        state: present
+        exclusive: false
+      # Falls back to ansible.builtin.authorized_key if ansible.posix
+      # is not available (both have identical interfaces).
+      ignore_errors: false
+
+    - name: "Phase 4 — Ensure .ssh directory permissions"
+      ansible.builtin.file:
+        path: "/home/{{ satellite_rex_user }}/.ssh"
+        state: directory
+        owner: "{{ satellite_rex_user }}"
+        group: "{{ satellite_rex_user }}"
+        mode: "0700"
+
+    # ================================================================
+    # PHASE 5 — SUDO CONFIGURATION FOR REX
+    # ================================================================
+
+    - name: "Phase 5 — Configure sudoers for REX user"
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ satellite_rex_user }}"
+        content: |
+          # Managed by Ansible — Satellite Remote Execution
+          {{ satellite_rex_user }} ALL=(ALL) {{ 'NOPASSWD: ' if satellite_rex_sudo_nopasswd else '' }}{{ satellite_rex_sudo_commands }}
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    # ================================================================
+    # PHASE 6 — SSHD HARDENING (optional, ensures key auth works)
+    # ================================================================
+
+    - name: "Phase 6 — Ensure PubkeyAuthentication is enabled"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PubkeyAuthentication"
+        line: "PubkeyAuthentication yes"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+  # ====================================================================
+  # HANDLERS
+  # ====================================================================
+  handlers:
+    - name: update ca trust
+      ansible.builtin.command:
+        cmd: update-ca-trust extract
+      changed_when: true
+
+    - name: restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted

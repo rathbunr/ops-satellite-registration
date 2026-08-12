@@ -1,0 +1,17 @@
+---
+# =============================================================================
+# satellite_full_onboard.yml
+# ---------------------------------------------------------------------------
+# Runs the full onboarding sequence:
+#   1. satellite_bootstrap.yml   — /etc/hosts, CA trust, REX user
+#   2. satellite_register_hosts.yml — activation-key-aware registration
+#
+# Use this as a single AAP Workflow Template, or run it standalone.
+# Both playbooks must be in the same project/repo.
+# =============================================================================
+
+- name: "Stage 1 — Pre-registration bootstrap"
+  ansible.builtin.import_playbook: satellite_bootstrap.yml
+
+- name: "Stage 2 — Register hosts with Satellite"
+  ansible.builtin.import_playbook: satellite_register_hosts.yml

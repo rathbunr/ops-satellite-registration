@@ -1,0 +1,280 @@
+---
+# =============================================================================
+# satellite_register_hosts.yml  (v3 — intelligent activation key resolution)
+# ---------------------------------------------------------------------------
+# Handles mixed-OS, mixed-arch inventories by:
+#
+#   1. Gathering facts from every target host.
+#   2. Resolving each host's activation key via a hierarchical fallback
+#      chain (exact minor+arch → major+arch → major → family → default).
+#   3. Deduplicating so Satellite gets one API call per unique key set.
+#   4. Running the correct registration command on each host.
+#
+# Supports RHEL, CentOS, CentOS Stream, Rocky, Alma, and Oracle Linux
+# out of the box via the distro-family alias map.
+#
+# AAP Job Template:
+#   Credentials:  Red Hat Satellite 6  +  Machine
+#   Inventory:    any (static, dynamic, smart)
+#   Limit:        target hosts
+# =============================================================================
+
+
+# ---- Play 1: Gather facts from every target ---------------------------------
+- name: Gather OS facts from target hosts
+  hosts: all
+  gather_facts: true
+  tasks: []
+
+
+# ---- Play 2: Resolve keys & generate registration commands -------------------
+- name: Resolve activation keys and generate registration commands
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    redhat.satellite.registration_command:
+      server_url:     "{{ satellite_server_url  | default(lookup('env', 'SATELLITE_SERVER_URL'))  | default(omit, boolean=true) }}"
+      username:       "{{ satellite_username    | default(lookup('env', 'SATELLITE_USERNAME'))    | default(omit, boolean=true) }}"
+      password:       "{{ satellite_password    | default(lookup('env', 'SATELLITE_PASSWORD'))    | default(omit, boolean=true) }}"
+      validate_certs: "{{ satellite_validate_certs | default(lookup('env', 'SATELLITE_VALIDATE_CERTS')) | default(true, boolean=true) }}"
+
+  tasks:
+
+    # ------------------------------------------------------------------
+    # Step 1: Build a per-host activation key resolution
+    # ------------------------------------------------------------------
+    # For each host, compute the fallback chain and find the first match.
+    # Result: a dict  { hostname: [ak-list] }
+    # ------------------------------------------------------------------
+    - name: Resolve activation key for each host
+      ansible.builtin.set_fact:
+        _host_ak_map: >-
+          {%- set result = {} -%}
+          {%- set ak_map = satellite_activation_key_map -%}
+          {%- set family_map = satellite_distro_family_map | default({}) -%}
+          {%- for host in groups['all'] -%}
+            {%- set hv = hostvars[host] -%}
+            {%- if hv.ansible_distribution is defined -%}
+              {%- set distro = hv.ansible_distribution | regex_replace(' ', '') -%}
+              {%- set major  = hv.ansible_distribution_major_version | default('') -%}
+              {%- set minor  = hv.ansible_distribution_version | default('') -%}
+              {%- set arch   = hv.ansible_architecture | default('x86_64') -%}
+              {%- set family = family_map.get(distro, distro) -%}
+              {#- Build the fallback chain, most-specific first -#}
+              {%- set candidates = [
+                    distro ~ '_' ~ minor ~ '_' ~ arch,
+                    distro ~ '_' ~ major ~ '_' ~ arch,
+                    distro ~ '_' ~ major,
+                    family ~ '_' ~ minor ~ '_' ~ arch,
+                    family ~ '_' ~ major ~ '_' ~ arch,
+                    family ~ '_' ~ major,
+                    'default'
+                  ]
+              -%}
+              {%- set ns = namespace(matched=false) -%}
+              {%- for candidate in candidates -%}
+                {%- if not ns.matched and candidate in ak_map -%}
+                  {%- set _ = result.update({ host: {
+                        'ak_list': ak_map[candidate],
+                        'matched_rule': candidate,
+                        'distro': distro,
+                        'major': major,
+                        'minor': minor,
+                        'arch': arch
+                      }
+                    })
+                  -%}
+                  {%- set ns.matched = true -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- if not ns.matched -%}
+                {%- set _ = result.update({ host: {
+                      'ak_list': none,
+                      'matched_rule': 'NO MATCH',
+                      'distro': distro,
+                      'major': major,
+                      'minor': minor,
+                      'arch': arch
+                    }
+                  })
+                -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ result }}
+
+    - name: Display activation key resolution for every host
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.key }}:
+          distro={{ item.value.distro }}
+          version={{ item.value.minor }}
+          arch={{ item.value.arch }}
+          → rule="{{ item.value.matched_rule }}"
+          → keys={{ item.value.ak_list }}
+      loop: "{{ _host_ak_map | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # ------------------------------------------------------------------
+    # Step 2: Fail fast if any host has no matching key
+    # ------------------------------------------------------------------
+    - name: Verify every host resolved to an activation key
+      ansible.builtin.assert:
+        that:
+          - item.value.ak_list is not none
+        fail_msg: >-
+          Host {{ item.key }} ({{ item.value.distro }} {{ item.value.minor }}
+          {{ item.value.arch }}) has no activation key.
+          Add an entry to satellite_activation_key_map for one of:
+            {{ item.value.distro }}_{{ item.value.minor }}_{{ item.value.arch }},
+            {{ item.value.distro }}_{{ item.value.major }}_{{ item.value.arch }},
+            {{ item.value.distro }}_{{ item.value.major }},
+            or "default".
+        quiet: true
+      loop: "{{ _host_ak_map | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # ------------------------------------------------------------------
+    # Step 3 (optional): Validate keys exist in Satellite
+    # ------------------------------------------------------------------
+    - name: Validate activation keys exist in Satellite
+      redhat.satellite.resource_info:
+        resource: activation_keys
+        organization: "{{ satellite_organization }}"
+        search: "name = \"{{ item }}\""
+      loop: >-
+        {{
+          _host_ak_map.values()
+          | map(attribute='ak_list')
+          | flatten
+          | unique
+          | list
+        }}
+      loop_control:
+        label: "{{ item }}"
+      register: _ak_validation
+      when: satellite_validate_activation_keys | bool
+
+    - name: Fail if any activation key does not exist in Satellite
+      ansible.builtin.assert:
+        that:
+          - item.resources | length > 0
+        fail_msg: >-
+          Activation key "{{ item.item }}" was not found in Satellite
+          organization "{{ satellite_organization }}".
+          Create it before running registration.
+        quiet: true
+      loop: "{{ _ak_validation.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when:
+        - satellite_validate_activation_keys | bool
+        - _ak_validation is not skipped
+
+    # ------------------------------------------------------------------
+    # Step 4: Deduplicate — one API call per unique key-set
+    # ------------------------------------------------------------------
+    - name: Build unique activation key sets
+      ansible.builtin.set_fact:
+        _unique_key_sets: >-
+          {{
+            _host_ak_map.values()
+            | map(attribute='ak_list')
+            | map('sort')
+            | map('join', ',')
+            | unique
+            | list
+          }}
+
+    - name: Show how many registration commands will be generated
+      ansible.builtin.debug:
+        msg: >-
+          {{ _unique_key_sets | length }} unique key set(s) found
+          across {{ _host_ak_map | length }} host(s):
+          {{ _unique_key_sets }}
+
+    # ------------------------------------------------------------------
+    # Step 5: Generate one registration command per unique key-set
+    # ------------------------------------------------------------------
+    - name: Generate registration command per unique key set
+      redhat.satellite.registration_command:
+        organization:                  "{{ satellite_organization | default(omit) }}"
+        location:                      "{{ satellite_location     | default(omit) }}"
+        hostgroup:                     "{{ satellite_hostgroup    | default(omit, boolean=true) }}"
+        activation_keys:               "{{ item.split(',') }}"
+        smart_proxy:                   "{{ satellite_smart_proxy | default(omit, boolean=true) }}"
+        force:                         "{{ satellite_force_registration }}"
+        ignore_subman_errors:          "{{ satellite_ignore_subman_errors }}"
+        insecure:                      "{{ satellite_insecure_curl }}"
+        jwt_expiration:                "{{ satellite_jwt_expiration }}"
+        setup_insights:                "{{ satellite_setup_insights }}"
+        setup_remote_execution:        "{{ satellite_setup_remote_execution }}"
+        setup_remote_execution_pull:   "{{ satellite_setup_remote_execution_pull }}"
+        setup_container_registry_certs: "{{ satellite_setup_container_registry_certs }}"
+        update_packages:               "{{ satellite_update_packages }}"
+        packages:                      "{{ satellite_packages | default(omit, boolean=true) }}"
+      loop: "{{ _unique_key_sets }}"
+      register: _reg_commands
+
+    # Build lookup:  { "ak-rhel9-prod": "curl …", "ak-rhel8-prod": "curl …" }
+    - name: Build command lookup by key set
+      ansible.builtin.set_fact:
+        _reg_cmd_by_keyset: >-
+          {{
+            dict(
+              _reg_commands.results
+              | map(attribute='item')
+              | zip(
+                  _reg_commands.results
+                  | map(attribute='registration_command')
+                )
+            )
+          }}
+
+
+# ---- Play 3: Execute the right command on each host --------------------------
+- name: Register hosts with Satellite
+  hosts: all
+  become: true
+  gather_facts: false          # already gathered in Play 1
+
+  vars:
+    # Look up this host's resolved key set, then find its command.
+    _my_ak_info: "{{ hostvars['localhost']['_host_ak_map'][inventory_hostname] }}"
+    _my_keyset:  "{{ _my_ak_info.ak_list | sort | join(',') }}"
+    _my_reg_cmd: "{{ hostvars['localhost']['_reg_cmd_by_keyset'][_my_keyset] }}"
+
+  tasks:
+    - name: Show resolved activation key for this host
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}:
+          {{ _my_ak_info.distro }} {{ _my_ak_info.minor }}
+          ({{ _my_ak_info.arch }})
+          → rule "{{ _my_ak_info.matched_rule }}"
+          → keys {{ _my_ak_info.ak_list }}
+
+    - name: Check current subscription status
+      ansible.builtin.command:
+        cmd: subscription-manager identity
+      register: _sub_identity
+      changed_when: false
+      failed_when: false
+
+    - name: Run registration command
+      ansible.builtin.shell:
+        cmd: "{{ _my_reg_cmd }}"
+      register: _reg_result
+      when: >-
+        satellite_force_registration | bool
+        or _sub_identity.rc | default(1) != 0
+      changed_when: _reg_result.rc == 0
+
+    - name: Display registration output
+      ansible.builtin.debug:
+        var: _reg_result.stdout_lines
+      when: _reg_result is changed

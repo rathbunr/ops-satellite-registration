@@ -1,0 +1,96 @@
+---
+# =============================================================================
+# Red Hat Satellite — Shared Defaults (all OS versions)
+# =============================================================================
+# Activation key selection is automatic.  The playbook resolves each host's
+# key by walking a fallback chain built from Ansible facts:
+#
+#   1. Exact:   {distro}_{major}.{minor}_{arch}   e.g. RedHat_9.4_x86_64
+#   2. Arch:    {distro}_{major}_{arch}            e.g. RedHat_9_x86_64
+#   3. Major:   {distro}_{major}                   e.g. RedHat_9
+#   4. Family:  {family}_{major}                   e.g. RedHat_8
+#                (maps CentOS/Rocky/Alma/OEL → RedHat family)
+#   5. Default: "default"                          catch-all if defined
+#
+# First match wins.  This lets you set one broad key per RHEL major version
+# and only add specific entries when a particular minor/arch combo needs
+# different content.
+# =============================================================================
+
+# -- Satellite API connection (overridden by AAP credential env vars) ----------
+# satellite_server_url: "https://satellite.example.com"
+# satellite_username:   "admin"
+# satellite_password:   "{{ vault_satellite_password }}"
+satellite_validate_certs: true
+
+# -- Organization & Location --------------------------------------------------
+satellite_organization: "Default Organization"
+satellite_location:     "Default Location"
+
+# -- Capsule / Smart Proxy (empty = use Satellite itself) ----------------------
+satellite_smart_proxy: ""
+
+# -- Registration behaviour ----------------------------------------------------
+satellite_hostgroup: ""
+satellite_operatingsystem: ""
+satellite_force_registration: false
+satellite_ignore_subman_errors: false
+satellite_insecure_curl: false
+satellite_jwt_expiration: 4
+
+# -- Post-registration options -------------------------------------------------
+satellite_setup_insights: true
+satellite_setup_remote_execution: true
+satellite_setup_remote_execution_pull: false
+satellite_setup_container_registry_certs: false
+satellite_update_packages: false
+satellite_packages: ""
+
+# -- Activation Key Map (hierarchical, most-specific wins) ---------------------
+#
+# Keys below are lookup strings.  The playbook tries each host's facts
+# against this map from most-specific to least-specific.
+#
+# You only need entries at the granularity you care about.  Most sites
+# need only the {distro}_{major} level.
+#
+satellite_activation_key_map:
+
+  # ---- Per major version (covers any minor / any arch) -----------------------
+  RedHat_9:
+    - "ak-rhel9-prod"
+  RedHat_8:
+    - "ak-rhel8-prod"
+  RedHat_7:
+    - "ak-rhel7-prod"
+
+  # ---- Per major+arch (uncomment if you ship separate content per arch) ------
+  # RedHat_9_x86_64:
+  #   - "ak-rhel9-x86-prod"
+  # RedHat_9_aarch64:
+  #   - "ak-rhel9-arm-prod"
+  # RedHat_9_s390x:
+  #   - "ak-rhel9-s390x-prod"
+
+  # ---- Per exact minor release (uncomment for pinned content views) ----------
+  # RedHat_8.6_x86_64:
+  #   - "ak-rhel86-eus-prod"
+  # RedHat_9.4_x86_64:
+  #   - "ak-rhel94-prod"
+
+  # ---- Catch-all (optional — fails loud if missing and no match above) -------
+  # default:
+  #   - "ak-generic"
+
+# -- Distribution family aliases -----------------------------------------------
+# Maps non-RHEL distros to their RHEL-equivalent family so CentOS 8 hosts
+# pick up the RedHat_8 key automatically.  Add entries as needed.
+satellite_distro_family_map:
+  CentOS:       "RedHat"
+  CentOSStream: "RedHat"
+  Rocky:        "RedHat"
+  AlmaLinux:    "RedHat"
+  OracleLinux:  "RedHat"
+
+# -- Validate keys against Satellite API (optional, adds one API call) ---------
+satellite_validate_activation_keys: false

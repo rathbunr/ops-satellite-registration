@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# RHEL 7 Overrides
+# =============================================================================
+
+satellite_activation_keys:
+  - "ak-rhel7-prod"
+
+# satellite_operatingsystem: "RHEL 7.9"
+# satellite_hostgroup: "RHEL7/Production"

@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# RHEL 9 Overrides
+# =============================================================================
+# If you use inventory groups (rhel7, rhel8, rhel9) this file takes
+# precedence over the map in all/satellite.yml for this group.
+# =============================================================================
+
+satellite_activation_keys:
+  - "ak-rhel9-prod"
+
+# Uncomment to override any shared default for RHEL 9 only:
+# satellite_operatingsystem: "RHEL 9.4"
+# satellite_hostgroup: "RHEL9/Production"
+# satellite_packages: "insights-client rhc"

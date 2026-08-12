@@ -1,0 +1,73 @@
+---
+# =============================================================================
+# Pre-Registration Bootstrap — Variables
+# =============================================================================
+# This playbook runs BEFORE the redhat.satellite collection is involved.
+# It solves two problems:
+#   1. Target hosts cannot resolve the Satellite server (no DNS).
+#   2. Target hosts must trust the Satellite CA and have an account
+#      ready for Remote Execution (REX) over SSH.
+#
+# All values here are examples — update them for your environment.
+# =============================================================================
+
+# -- Satellite server identity -------------------------------------------------
+satellite_fqdn: "satellite.example.com"
+satellite_ip:   "10.0.1.50"
+
+# Additional /etc/hosts entries (capsules, repos, etc.) if ever needed.
+# Each item needs 'ip' and 'fqdn'; optional 'aliases' list.
+satellite_extra_hosts_entries: []
+  # - ip: "10.0.2.60"
+  #   fqdn: "capsule01.example.com"
+  #   aliases:
+  #     - capsule01
+
+# -- Satellite CA certificate -------------------------------------------------
+# Two delivery methods (pick one):
+#
+#   Method A — "push" (default)
+#     Place the Satellite CA cert file on the Ansible controller and set
+#     the path below.  Grab it from your Satellite at:
+#       /etc/pki/katello/certs/katello-server-ca.crt
+#     or download:
+#       curl -k https://<satellite>/pub/katello-server-ca.crt -o katello-server-ca.crt
+#
+#   Method B — "pull"
+#     The playbook downloads the cert from the Satellite's /pub endpoint
+#     directly onto each host (requires the /etc/hosts entry to be in
+#     place first, and uses --insecure for the initial fetch since the
+#     host doesn't trust the cert yet).
+#
+satellite_ca_delivery: "push"                                 # "push" or "pull"
+satellite_ca_cert_local_path: "files/katello-server-ca.crt"   # for push method
+satellite_ca_cert_remote_path: "/etc/pki/ca-trust/source/anchors/katello-server-ca.crt"
+
+# -- REX (Remote Execution) user ----------------------------------------------
+# Satellite REX uses SSH key authentication by default.  The Capsule's
+# foreman-proxy process holds an SSH keypair; the public key must be on
+# every managed host.
+#
+# Grab the public key from your Satellite:
+#   cat /usr/share/foreman-proxy/.ssh/id_rsa_foreman_proxy.pub
+#
+# Or via the API:
+#   curl -s -k -u admin:password \
+#     https://satellite.example.com/api/v2/smart_proxies/1 \
+#     | python3 -m json.tool | grep pubkey
+#
+satellite_rex_user: "foreman-rex"
+satellite_rex_uid: 5000                     # optional — omit to let the OS assign
+satellite_rex_comment: "Satellite Remote Execution"
+satellite_rex_shell: "/bin/bash"
+satellite_rex_create_home: true
+
+# The foreman-proxy SSH public key from the Satellite server.
+# Paste the full key string here or vault-encrypt it.
+satellite_rex_ssh_pubkey: "ssh-rsa AAAA...your-key-here... foreman-proxy@satellite.example.com"
+
+# Sudo configuration for the REX user.
+# "ALL" = full sudo (Satellite default expectation).
+# Narrow it if your security policy requires it.
+satellite_rex_sudo_commands: "ALL"
+satellite_rex_sudo_nopasswd: true
