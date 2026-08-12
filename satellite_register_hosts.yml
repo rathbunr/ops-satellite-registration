@@ -254,14 +254,18 @@
           {{
             dict(
               _reg_commands.results
+              | rejectattr('skipped', 'defined')
               | map(attribute='item')
               | zip(
                   _reg_commands.results
+                  | rejectattr('skipped', 'defined')
                   | map(attribute='registration_command')
                 )
             )
           }}
-      when: _reg_commands.results is defined and _reg_commands.results | length > 0
+      when: >-
+        _reg_commands.results is defined
+        and _reg_commands.results | rejectattr('skipped', 'defined') | list | length > 0
 
 
 # ---- Play 3: Execute the right command on each host --------------------------
