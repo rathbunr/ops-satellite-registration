@@ -34,7 +34,7 @@ satellite_extra_hosts_entries: []
 #     place first, and uses --insecure for the initial fetch since the
 #     host doesn't trust the cert yet).
 #
-satellite_ca_delivery: "push"                                 # "push" or "pull"
+satellite_ca_delivery: "pull"                                 # "push" or "pull"
 satellite_ca_cert_local_path: "files/katello-server-ca.crt"   # for push method
 satellite_ca_cert_remote_path: "/etc/pki/ca-trust/source/anchors/katello-server-ca.crt"
 

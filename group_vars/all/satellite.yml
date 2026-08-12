@@ -25,8 +25,8 @@
 satellite_validate_certs: true
 
 # -- Organization & Location --------------------------------------------------
-satellite_organization: "Default Organization"
-satellite_location:     "Default Location"
+satellite_organization: "RITCSUSA"
+satellite_location:     "Glen Burnie, MD"
 
 # -- Capsule / Smart Proxy (empty = use Satellite itself) ----------------------
 satellite_smart_proxy: ""
@@ -57,8 +57,6 @@ satellite_validate_activation_keys: false
 # activation keys.  The playbook builds candidates from facts and
 # walks the chain until it finds a match.
 satellite_activation_key_map:
-  RedHat_8:
-    - "AK-RHEL8"
   RedHat_9:
     - "AK-RHEL9"
   RedHat_10:
