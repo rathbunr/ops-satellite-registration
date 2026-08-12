@@ -57,14 +57,12 @@ satellite_validate_activation_keys: false
 # activation keys.  The playbook builds candidates from facts and
 # walks the chain until it finds a match.
 satellite_activation_key_map:
-  RedHat_7:
-    - "ak-rhel7-prod"
   RedHat_8:
-    - "ak-rhel8-prod"
+    - "AK-RHEL8"
   RedHat_9:
-    - "ak-rhel9-prod"
-  # RedHat_10:
-  #   - "ak-rhel10-prod"
+    - "AK-RHEL9"
+  RedHat_10:
+    - "AK-RHEL10"
   # CentOS_7:
   #   - "ak-centos7-prod"
   # RedHat_8.6_x86_64:
