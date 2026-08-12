@@ -34,7 +34,15 @@
 - name: Gather OS facts from target hosts
   hosts: all
   gather_facts: true
-  tasks: []
+
+  tasks:
+    - name: Check current subscription status
+      ansible.builtin.command:
+        cmd: subscription-manager identity
+      register: _sub_identity
+      changed_when: false
+      failed_when: false
+      become: true
 
 
 # ---- Play 2: Resolve keys & generate registration commands -------------------
@@ -54,6 +62,30 @@
       validate_certs: "{{ satellite_validate_certs | default(lookup('env', 'SATELLITE_VALIDATE_CERTS')) | default(true, boolean=true) }}"
 
   tasks:
+
+    # ------------------------------------------------------------------
+    # Step 0: Determine which hosts actually need registration
+    # ------------------------------------------------------------------
+    - name: Identify hosts needing registration
+      run_once: true
+      ansible.builtin.set_fact:
+        _hosts_needing_reg: >-
+          {{
+            ansible_play_hosts_all
+            | select('in', hostvars | dict2items | selectattr('value._sub_identity', 'defined')
+                | selectattr('value._sub_identity.rc', 'ne', 0)
+                | map(attribute='key') | list)
+            | list
+          }}
+        _force_reg: "{{ satellite_force_registration | default(false) | bool }}"
+
+    - name: Show registration status
+      run_once: true
+      ansible.builtin.debug:
+        msg: >-
+          {{ _hosts_needing_reg | length }} of {{ ansible_play_hosts_all | length }}
+          host(s) need registration.
+          {{ 'Force mode is ON — all hosts will be processed.' if _force_reg else '' }}
 
     # ------------------------------------------------------------------
     # Step 1: Build a per-host activation key resolution
@@ -212,6 +244,7 @@
         packages:                      "{{ satellite_packages | default(omit, boolean=true) }}"
       loop: "{{ _unique_key_sets }}"
       register: _reg_commands
+      when: _hosts_needing_reg | length > 0 or _force_reg
 
     # Build lookup:  { "AK-RHEL9": "curl …", "AK-RHEL8": "curl …" }
     - name: Build command lookup by key set
@@ -228,6 +261,7 @@
                 )
             )
           }}
+      when: _reg_commands.results is defined and _reg_commands.results | length > 0
 
 
 # ---- Play 3: Execute the right command on each host --------------------------
@@ -242,7 +276,8 @@
     _play2_host: "{{ ansible_play_hosts_all[0] }}"
     _my_ak_info: "{{ hostvars[_play2_host]['_host_ak_map'][inventory_hostname] }}"
     _my_keyset:  "{{ _my_ak_info.ak_list | sort | join(',') }}"
-    _my_reg_cmd: "{{ hostvars[_play2_host]['_reg_cmd_by_keyset'][_my_keyset] }}"
+    _my_reg_cmd: "{{ hostvars[_play2_host]['_reg_cmd_by_keyset'][_my_keyset] | default('') }}"
+    _already_registered: "{{ _sub_identity.rc | default(1) == 0 }}"
 
   tasks:
     - name: Show resolved activation key for this host
@@ -253,21 +288,16 @@
           ({{ _my_ak_info.arch }})
           → rule "{{ _my_ak_info.matched_rule }}"
           → keys {{ _my_ak_info.ak_list }}
-
-    - name: Check current subscription status
-      ansible.builtin.command:
-        cmd: subscription-manager identity
-      register: _sub_identity
-      changed_when: false
-      failed_when: false
+          → {{ 'already registered' if _already_registered else 'needs registration' }}
 
     - name: Run registration command
       ansible.builtin.shell:
         cmd: "{{ _my_reg_cmd }}"
       register: _reg_result
       when: >-
-        satellite_force_registration | bool
-        or _sub_identity.rc | default(1) != 0
+        _my_reg_cmd | length > 0
+        and (satellite_force_registration | bool
+             or not _already_registered)
       changed_when: _reg_result.rc == 0
 
     - name: Display registration output
