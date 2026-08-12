@@ -1,0 +1,11 @@
+---
+# =============================================================================
+# RHEL 9 Overrides
+# =============================================================================
+# If you use inventory groups (rhel7, rhel8, rhel9) this file takes
+# precedence over the map in all/satellite.yml for this group.
+# Uncomment and customise as needed.
+# =============================================================================
+
+# satellite_activation_keys:
+#   - "ak-rhel9-prod"

@@ -1,21 +1,16 @@
 ---
 # =============================================================================
-# Pre-Registration Bootstrap — Variables
+# Bootstrap Variables — Pre-Registration Configuration
 # =============================================================================
-# This playbook runs BEFORE the redhat.satellite collection is involved.
-# It solves two problems:
-#   1. Target hosts cannot resolve the Satellite server (no DNS).
-#   2. Target hosts must trust the Satellite CA and have an account
-#      ready for Remote Execution (REX) over SSH.
-#
-# All values here are examples — update them for your environment.
+# These variables drive satellite_bootstrap.yml.  Update the required
+# fields for your environment before running.
 # =============================================================================
 
-# -- Satellite server identity -------------------------------------------------
-satellite_fqdn: "satellite.example.com"
-satellite_ip:   "10.0.1.50"
+# -- Satellite Server ----------------------------------------------------------
+satellite_fqdn: "satellite.example.com"       # REQUIRED — Satellite FQDN
+satellite_ip:   "10.0.0.14"                    # REQUIRED — Satellite IP address
 
-# Additional /etc/hosts entries (capsules, repos, etc.) if ever needed.
+# Additional /etc/hosts entries (capsules, proxies, etc.) if ever needed.
 # Each item needs 'ip' and 'fqdn'; optional 'aliases' list.
 satellite_extra_hosts_entries: []
   # - ip: "10.0.2.60"

@@ -1,0 +1,34 @@
+---
+# =============================================================================
+# Example Inventory — NOT used by AAP (AAP uses its own inventory sources)
+# =============================================================================
+# This is for CLI testing only.  Two patterns are shown:
+#
+#   Pattern A — Flat inventory (recommended with fact-based key resolution)
+#     Just list every host under 'all'.  The playbook gathers facts and
+#     resolves the correct activation key automatically.
+#
+#   Pattern B — Grouped by OS version
+#     Pre-sort hosts into rhel7/rhel8/rhel9 groups.  Each group can
+#     override activation keys via group_vars/rhel*/satellite.yml.
+#
+# =============================================================================
+
+all:
+  hosts:
+    # Pattern A — flat (let fact resolution do the work)
+    # host1.example.com:
+    # host2.example.com:
+    # host3.example.com:
+
+  children:
+    # Pattern B — grouped by OS
+    rhel7:
+      hosts: {}
+        # legacy1.example.com:
+    rhel8:
+      hosts: {}
+        # app-server1.example.com:
+    rhel9:
+      hosts: {}
+        # testy-01.corp.ritcsusa.com:

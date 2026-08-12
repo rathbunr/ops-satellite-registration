@@ -11,6 +11,7 @@
 #   3. Creates a dedicated user for Satellite Remote Execution (REX).
 #   4. Deploys the foreman-proxy SSH public key for key-based REX auth.
 #   5. Configures passwordless sudo for the REX user.
+#   6. Ensures PubkeyAuthentication is enabled in sshd_config.
 #
 # Requirements:
 #   - SSH + sudo access to the target hosts (Machine credential in AAP).
@@ -127,8 +128,6 @@
         key: "{{ satellite_rex_ssh_pubkey }}"
         state: present
         exclusive: false
-      # Falls back to ansible.builtin.authorized_key if ansible.posix
-      # is not available (both have identical interfaces).
       ignore_errors: false
 
     - name: "Phase 4 — Ensure .ssh directory permissions"

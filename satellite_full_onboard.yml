@@ -6,8 +6,9 @@
 #   1. satellite_bootstrap.yml   — /etc/hosts, CA trust, REX user
 #   2. satellite_register_hosts.yml — activation-key-aware registration
 #
-# Use this as a single AAP Workflow Template, or run it standalone.
-# Both playbooks must be in the same project/repo.
+# Use this as a single AAP Job Template, or run it standalone.
+# For AAP, a two-node Workflow Template is preferred for independent
+# failure handling per stage.
 # =============================================================================
 
 - name: "Stage 1 — Pre-registration bootstrap"

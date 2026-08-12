@@ -14,7 +14,8 @@
 #
 # First match wins.  This lets you set one broad key per RHEL major version
 # and only add specific entries when a particular minor/arch combo needs
-# different content.
+# different content.  Each OS group (rhel7, rhel8, rhel9, …) can also
+# define its own key in its group_vars.
 # =============================================================================
 
 # -- Satellite API connection (overridden by AAP credential env vars) ----------
@@ -46,51 +47,35 @@ satellite_setup_container_registry_certs: false
 satellite_update_packages: false
 satellite_packages: ""
 
-# -- Activation Key Map (hierarchical, most-specific wins) ---------------------
-#
-# Keys below are lookup strings.  The playbook tries each host's facts
-# against this map from most-specific to least-specific.
-#
-# You only need entries at the granularity you care about.  Most sites
-# need only the {distro}_{major} level.
-#
-satellite_activation_key_map:
+# -- Activation key validation (optional) --------------------------------------
+# When true, the playbook queries the Satellite API to verify each
+# activation key exists before attempting registration.
+satellite_validate_activation_keys: false
 
-  # ---- Per major version (covers any minor / any arch) -----------------------
-  RedHat_9:
-    - "ak-rhel9-prod"
-  RedHat_8:
-    - "ak-rhel8-prod"
+# -- OS-to-activation-key map -------------------------------------------------
+# Each entry maps an Ansible-detected OS identifier to a list of
+# activation keys.  The playbook builds candidates from facts and
+# walks the chain until it finds a match.
+satellite_activation_key_map:
   RedHat_7:
     - "ak-rhel7-prod"
-
-  # ---- Per major+arch (uncomment if you ship separate content per arch) ------
-  # RedHat_9_x86_64:
-  #   - "ak-rhel9-x86-prod"
-  # RedHat_9_aarch64:
-  #   - "ak-rhel9-arm-prod"
-  # RedHat_9_s390x:
-  #   - "ak-rhel9-s390x-prod"
-
-  # ---- Per exact minor release (uncomment for pinned content views) ----------
+  RedHat_8:
+    - "ak-rhel8-prod"
+  RedHat_9:
+    - "ak-rhel9-prod"
+  # RedHat_10:
+  #   - "ak-rhel10-prod"
+  # CentOS_7:
+  #   - "ak-centos7-prod"
   # RedHat_8.6_x86_64:
-  #   - "ak-rhel86-eus-prod"
-  # RedHat_9.4_x86_64:
-  #   - "ak-rhel94-prod"
+  #   - "ak-rhel86-eus"
 
-  # ---- Catch-all (optional — fails loud if missing and no match above) -------
-  # default:
-  #   - "ak-generic"
-
-# -- Distribution family aliases -----------------------------------------------
-# Maps non-RHEL distros to their RHEL-equivalent family so CentOS 8 hosts
-# pick up the RedHat_8 key automatically.  Add entries as needed.
+# -- Distro family aliasing ---------------------------------------------------
+# Maps non-RHEL distribution names to a "family" so they resolve to
+# the same activation key as RHEL.  e.g. CentOS 9 → RedHat_9.
 satellite_distro_family_map:
   CentOS:       "RedHat"
   CentOSStream: "RedHat"
   Rocky:        "RedHat"
   AlmaLinux:    "RedHat"
   OracleLinux:  "RedHat"
-
-# -- Validate keys against Satellite API (optional, adds one API call) ---------
-satellite_validate_activation_keys: false

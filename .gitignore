@@ -1,0 +1,17 @@
+# Environment-specific — each deployment provides its own
+files/katello-server-ca.crt
+
+# Ansible vault passwords
+*.vault
+.vault_pass
+
+# Retry files
+*.retry
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
