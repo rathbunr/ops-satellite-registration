@@ -38,8 +38,11 @@
 
 
 # ---- Play 2: Resolve keys & generate registration commands -------------------
+# Uses hosts: all so AAP limits are respected, but connection: local
+# and run_once: true on every task ensures the API logic runs once
+# from the controller — no localhost inventory entry required.
 - name: Resolve activation keys and generate registration commands
-  hosts: localhost
+  hosts: all
   connection: local
   gather_facts: false
 
@@ -59,12 +62,13 @@
     # Result: a dict  { hostname: { ak_list: [...], matched_rule: "...", ... } }
     # ------------------------------------------------------------------
     - name: Resolve activation key for each host
+      run_once: true
       ansible.builtin.set_fact:
         _host_ak_map: >-
           {%- set result = {} -%}
           {%- set ak_map = satellite_activation_key_map -%}
           {%- set family_map = satellite_distro_family_map | default({}) -%}
-          {%- for host in groups['all'] -%}
+          {%- for host in ansible_play_hosts_all -%}
             {%- set hv = hostvars[host] -%}
             {%- if hv.ansible_distribution is defined -%}
               {%- set distro = hv.ansible_distribution | regex_replace(' ', '') -%}
@@ -106,6 +110,7 @@
           {{ result }}
 
     - name: Display activation key resolution for every host
+      run_once: true
       ansible.builtin.debug:
         msg: >-
           {{ item }}:
@@ -114,12 +119,13 @@
           arch={{ _host_ak_map[item].arch }}
           → rule="{{ _host_ak_map[item].matched_rule }}"
           → keys={{ _host_ak_map[item].ak_list }}
-      loop: "{{ groups['all'] }}"
+      loop: "{{ _host_ak_map | list }}"
 
     # ------------------------------------------------------------------
     # Step 2: Validate every host got a match
     # ------------------------------------------------------------------
     - name: Verify every host resolved to an activation key
+      run_once: true
       ansible.builtin.assert:
         that:
           - _host_ak_map[item].matched_rule != 'none'
@@ -129,12 +135,13 @@
           Candidates tried: {{ _host_ak_map[item].candidates }}.
           Add an entry to satellite_activation_key_map in group_vars/all/satellite.yml.
         quiet: true
-      loop: "{{ groups['all'] }}"
+      loop: "{{ _host_ak_map | list }}"
 
     # ------------------------------------------------------------------
     # Step 3: (Optional) API-validate that keys exist in Satellite
     # ------------------------------------------------------------------
     - name: Validate activation keys exist in Satellite
+      run_once: true
       redhat.satellite.resource_info:
         resource: activation_keys
         search: "name = \"{{ item }}\""
@@ -151,6 +158,7 @@
       when: satellite_validate_activation_keys | default(false) | bool
 
     - name: Fail if any activation key does not exist in Satellite
+      run_once: true
       ansible.builtin.assert:
         that:
           - item.resources | length > 0
@@ -165,6 +173,7 @@
     # Step 4: Deduplicate and generate one command per unique key-set
     # ------------------------------------------------------------------
     - name: Build unique activation key sets
+      run_once: true
       ansible.builtin.set_fact:
         _unique_key_sets: >-
           {{
@@ -177,12 +186,14 @@
           }}
 
     - name: Show how many registration commands will be generated
+      run_once: true
       ansible.builtin.debug:
         msg: >-
           {{ _unique_key_sets | length }} unique key set(s) found across
-          {{ groups['all'] | length }} host(s): {{ _unique_key_sets }}
+          {{ _host_ak_map | length }} host(s): {{ _unique_key_sets }}
 
     - name: Generate registration command per unique key set
+      run_once: true
       redhat.satellite.registration_command:
         organization:                  "{{ satellite_organization | default(omit) }}"
         location:                      "{{ satellite_location     | default(omit) }}"
@@ -204,6 +215,7 @@
 
     # Build lookup:  { "AK-RHEL9": "curl …", "AK-RHEL8": "curl …" }
     - name: Build command lookup by key set
+      run_once: true
       ansible.builtin.set_fact:
         _reg_cmd_by_keyset: >-
           {{
@@ -225,10 +237,12 @@
   gather_facts: false          # already gathered in Play 1
 
   vars:
-    # Look up this host's resolved key set, then find its command.
-    _my_ak_info: "{{ hostvars['localhost']['_host_ak_map'][inventory_hostname] }}"
+    # The run_once tasks in Play 2 store facts on the first host in the
+    # play.  Look up that host's hostvars to find the maps.
+    _play2_host: "{{ ansible_play_hosts_all[0] }}"
+    _my_ak_info: "{{ hostvars[_play2_host]['_host_ak_map'][inventory_hostname] }}"
     _my_keyset:  "{{ _my_ak_info.ak_list | sort | join(',') }}"
-    _my_reg_cmd: "{{ hostvars['localhost']['_reg_cmd_by_keyset'][_my_keyset] }}"
+    _my_reg_cmd: "{{ hostvars[_play2_host]['_reg_cmd_by_keyset'][_my_keyset] }}"
 
   tasks:
     - name: Show resolved activation key for this host
