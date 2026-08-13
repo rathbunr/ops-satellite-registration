@@ -7,8 +7,8 @@
 # =============================================================================
 
 # -- Satellite Server ----------------------------------------------------------
-satellite_fqdn: "sat-01.corp.ritcsusa.com"       # REQUIRED — Satellite FQDN
-satellite_ip:   "10.0.0.14"                    # REQUIRED — Satellite IP address
+satellite_fqdn: "sat-01.corp.com"       # REQUIRED — Satellite FQDN
+satellite_ip:   "10.0.0.x"                    # REQUIRED — Satellite IP address
 
 # Additional /etc/hosts entries (capsules, proxies, etc.) if ever needed.
 # Each item needs 'ip' and 'fqdn'; optional 'aliases' list.
@@ -59,7 +59,7 @@ satellite_rex_create_home: true
 
 # The foreman-proxy SSH public key from the Satellite server.
 # Paste the full key string here or vault-encrypt it.
-satellite_rex_ssh_pubkey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCidAmSfxyYU0jlbMpYdcmoRCnB0dx43ZEj4cOYGfQnbOAABssfYPTjv/qgPTccBp5ovcHWfertKa6tS4q/zkxWiCrEip792XwXvAGcMVTqEMLGGxRf+rW6XFKmB5TU8aZHEaPz/bWR7M+HZfht5qByqgjHtPtFuObdE3Hg/WJdKfPPE8xWQ9XZTmXYM1WereC+2mqJt8Rk9tDWj3vp2YsnYhPkcLlxDwm9RB+hmisbU5xYqCCQ0aFnzNUwtX5rJC9FJxX1uF68xyf6DqeL2eza0bYTcvClft0WRIurmNqcJ+1WKqbTj8xXYj+s1q/8NzIIAVc0pGjkiam+38lWZ8f6IOOCMwaou8AwyRIbHZUdRvbob8L8vklp+amNonCCamBcxFBa8+i7mYHgoHtV3Wp2vg9ozCxLpKRmhZrEJmrlaIZf67XBx56PClhO3v0p+df7raH7m/bD8V140PT30T4zk5sfQgi92UDU8HwJDKPUlr7ijTeFOvFKkXNcP/e32Ts= foreman-proxy@sat-01.corp.ritcsusa.com"
+satellite_rex_ssh_pubkey: "ssh-rsa insert that big key here"
 
 # Sudo configuration for the REX user.
 # "ALL" = full sudo (Satellite default expectation).
